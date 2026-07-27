@@ -6,32 +6,32 @@ const db         = require('./db');
 const { Resend } = require('resend');
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY || null;
+const EMAIL_FROM = process.env.EMAIL_FROM || 'Peer Connect <onboarding@resend.dev>';
 let resend = null;
 if (RESEND_API_KEY) {
   resend = new Resend(RESEND_API_KEY);
 }
 
-// ── Helper: send email (Resend or console fallback) ────────────────────
+// ── Helper: send email (Resend or error when not configured) ──────────
 async function sendEmail(to, subject, html) {
   if (resend) {
     try {
-      await resend.emails.send({
-        from: 'Peer Connect <noreply@peerconnect.app>',
+      const result = await resend.emails.send({
+        from: EMAIL_FROM,
         to,
         subject,
         html
       });
+      console.log(`[EMAIL] Sent to ${to} — id=${result?.id || 'unknown'}`);
       return true;
     } catch (err) {
       console.error('[EMAIL] Resend failed:', err.message);
       return false;
     }
   }
-  // Dev fallback — log to console
-  console.log(`[EMAIL LOG] To: ${to}`);
-  console.log(`[EMAIL LOG] Subject: ${subject}`);
-  console.log(`[EMAIL LOG] Body: ${html}`);
-  return true;
+  // Resend not configured — this is an error, not a silent success
+  console.error(`[EMAIL] FAILED: RESEND_API_KEY not set. Cannot send email to ${to}. Set RESEND_API_KEY in environment variables.`);
+  return false;
 }
 
 // ── Middleware: require authenticated session ──────────────────────────
