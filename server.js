@@ -12,7 +12,7 @@ const server = http.createServer(app);
 const io     = new Server(server, {
   pingInterval: 10000,
   pingTimeout:  5000,
-  cors: { origin: '*' }
+  cors: { origin: true, credentials: true }
 });
 
 // ─── Middleware (before async init so routes are registered early) ─────
@@ -174,14 +174,18 @@ app.get('/admin/active-connections', requireAuth, requireAdmin, (req, res) => {
 });
 
 // ─── Socket.io auth middleware ────────────────────────────────────────
+// Change the io.use middleware to read from the cookie header instead of auth token:
 io.use((socket, next) => {
-  const token = socket.handshake.auth?.token || socket.handshake.query?.token;
+  const rawCookie = socket.handshake.headers.cookie;
+  if (!rawCookie) return next(new Error('Authentication required'));
+
+  const match = rawCookie.match(/peer_session=([^;]+)/);
+  const token = match ? match[1] : null;
   if (!token) return next(new Error('Authentication required'));
 
   const session = db.getSession(token);
   if (!session) return next(new Error('Invalid or expired session'));
 
-  // Sliding expiry
   db.refreshSession(token);
   socket.email = session.email;
   next();

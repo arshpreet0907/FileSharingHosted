@@ -38,16 +38,10 @@ const App = (() => {
   }
 
   // ── Session check & auth ──────────────────────────────────────────
-  function getCookie(name) {
-    const match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
-    return match ? match[2] : null;
-  }
-
   async function checkSession() {
     try {
       const res = await fetch('/api/auth/me');
       if (!res.ok) {
-        // Not authenticated — redirect to login
         window.location.href = '/login.html';
         return false;
       }
@@ -55,9 +49,12 @@ const App = (() => {
       myPeerId = data.email;
       isAdmin = data.isAdmin;
 
-      // Show admin link if admin
       const adminLink = document.getElementById('admin-link');
       if (adminLink && isAdmin) adminLink.classList.remove('hidden');
+
+      // Show identity immediately — no need to wait for socket
+      document.getElementById('peer-id-text').textContent = myPeerId;
+      document.getElementById('peer-id-chip').textContent = myPeerId;
 
       return true;
     } catch (err) {
@@ -67,22 +64,14 @@ const App = (() => {
     }
   }
 
-  // ── Peer ID management ─────────────────────────────────────────────
-  function savePeerId(id) {
-    // Peer ID is now the email from session — we don't save it locally
-  }
-
   // ── Socket.io ─────────────────────────────────────────────────────
+  // NOTE: session cookie is httpOnly, so JS cannot read it directly.
+  // Instead we let the browser send it automatically via withCredentials,
+  // and the server reads it from the raw cookie header on the socket handshake.
   function initSocket() {
-    const sessionToken = getCookie('peer_session');
-    if (!sessionToken) {
-      window.location.href = '/login.html';
-      return;
-    }
-
     socket = io(API, {
       transports: ['websocket'],
-      auth: { token: sessionToken }
+      withCredentials: true
     });
 
     socket.on('connect', () => {
@@ -95,10 +84,18 @@ const App = (() => {
       showConnectionStatus('warn', 'Reconnecting to server…');
     });
 
+    socket.on('connect_error', (err) => {
+      console.error('[WS] Connection error:', err.message);
+      if (err.message.includes('Authentication')) {
+        window.location.href = '/login.html';
+      }
+    });
+
     // Server confirms identity
     socket.on('registered', ({ peerId, email }) => {
       myPeerId = email || peerId;
       document.getElementById('peer-id-text').textContent = myPeerId;
+      document.getElementById('peer-id-chip').textContent = myPeerId;
       document.getElementById('connect-card')?.classList.remove('locked');
       console.log(`[APP] Authenticated as ${myPeerId}`);
     });
@@ -299,12 +296,10 @@ const App = (() => {
 
   // ── Logout ────────────────────────────────────────────────────────
   async function handleLogout() {
-    // If connected, confirm
     if (connectedPeerId) {
       if (!confirm('You are connected to a peer. Disconnect and log out?')) return;
       socket.emit('disconnect-peer');
     }
-
     try {
       await fetch('/api/auth/logout', { method: 'POST' });
     } catch (e) {
