@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Peer Connect</title>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <link rel="stylesheet" href="/assets/css/main.css"/>
+</head>
+<body>
+<div class="container">
+
+  <!-- ── Header ── -->
+  <div class="app-header">
+    <div class="logo">Peer Connect</div>
+    <div class="app-header-right">
+      <a href="/admin.html" id="admin-link" class="admin-link hidden">Admin</a>
+      <button class="btn-logout" id="logout-btn" onclick="App.handleLogout()">Logout</button>
+    </div>
+  </div>
+  <h1>Your <span>Network</span> Identity</h1>
+  <p class="subtitle">Your email is your peer ID — share it to connect securely.</p>
+
+  <!-- ── Connection status bar ── -->
+  <div class="status-bar info hidden" id="connection-status">
+    <span class="status-dot dot-blue"></span>
+    <span>Connecting…</span>
+  </div>
+
+  <!-- ── Identity card ── -->
+  <div class="card">
+    <div class="chips">
+      <div class="chip">
+        <div class="chip-label">Your email (peer ID)</div>
+        <div class="chip-value" id="peer-id-text"><span class="loading-text">loading…</span></div>
+      </div>
+      <div class="chip">
+        <div class="chip-label">Status</div>
+        <div class="chip-value" id="ws-status">connecting…</div>
+      </div>
+    </div>
+    <div class="id-label"><span class="dot"></span> Share your email to connect</div>
+    <div class="id-box">
+      <div class="id-text" id="peer-id-text">—</div>
+      <button class="btn-copy" id="copy-btn" onclick="App.copyId()">Copy</button>
+    </div>
+  </div>
+
+  <!-- ── Tabs ── -->
+  <div class="tabs">
+    <button class="tab-btn active" data-tab="chat"  onclick="App.switchTab('chat')">💬 Chat</button>
+    <button class="tab-btn files"  data-tab="files" onclick="App.switchTab('files')">📁 Files</button>
+  </div>
+
+  <!-- ── Tab containers ── -->
+  <div id="tab-chat"></div>
+  <div id="tab-files" class="hidden"></div>
+
+</div>
+
+<!-- Scripts — order matters -->
+<script src="/assets/js/app.js"></script>
+<script src="/assets/js/chat.js"></script>
+<script src="/assets/js/fileshare.js"></script>
+<script>App.init();</script>
+</body>
+</html>

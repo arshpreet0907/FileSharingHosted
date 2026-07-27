@@ -1,0 +1,33 @@
+<!-- ── Connect card ── -->
+<div class="card locked" id="connect-card">
+  <div class="section-label">Connect to a peer</div>
+  <div class="row">
+    <input class="text-input" id="peer-input" placeholder="Paste peer ID here…"/>
+    <button class="btn-secondary" onclick="App.connectToPeer()">Connect →</button>
+  </div>
+  <div id="connect-alert" class="hidden"></div>
+</div>
+
+<!-- ── Chat card ── -->
+<div class="card hidden" id="chat-card">
+  <div class="chat-header">
+    <div>
+      <div class="section-label">Live chat</div>
+      <div class="chat-peer">Connected to <span id="chat-peer-id">—</span></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <span class="enc-badge hidden" id="enc-badge">🔒 E2E Encrypted</span>
+      <button class="btn-disconnect" onclick="App.disconnectPeer()">Disconnect</button>
+    </div>
+  </div>
+  <div class="chat-messages" id="chat-messages"></div>
+  <div class="chat-input-row">
+    <input
+      class="chat-input"
+      id="chat-input"
+      placeholder="Type a message…"
+      onkeydown="if(event.key==='Enter') Chat.sendMessage()"
+    />
+    <button class="btn-send" onclick="Chat.sendMessage()">Send</button>
+  </div>
+</div>

@@ -1,0 +1,57 @@
+<!-- ── WebRTC status ── -->
+<div class="card">
+  <div class="rtc-status">
+    <div class="rtc-dot" id="rtc-dot"></div>
+    <span id="rtc-status-text">Connect to a peer in Chat tab first</span>
+  </div>
+  <p style="font-size:12px;color:#333">Files travel directly between browsers — your server never sees them.</p>
+</div>
+
+<!-- ── Incoming file request ── -->
+<div class="card hidden" id="incoming-card">
+  <div class="section-label">Incoming file</div>
+  <div class="incoming-box">
+    <div class="incoming-title" id="incoming-filename">—</div>
+    <div class="incoming-meta"  id="incoming-meta">—</div>
+    <div class="incoming-btns">
+      <button class="btn-accept"  onclick="FileShare.acceptFile()">Accept</button>
+      <button class="btn-decline" onclick="FileShare.declineFile()">Decline</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Send file card ── -->
+<div class="card locked" id="send-card">
+  <div class="section-label">Send a file</div>
+  <div class="drop-zone" id="drop-zone">
+    <input type="file" id="file-input" onchange="FileShare.fileSelected(this)"/>
+    <div class="drop-icon">↑</div>
+    <div class="drop-text">Drop a file or <span>click to browse</span></div>
+    <div class="file-selected-label hidden" id="file-selected-label"></div>
+  </div>
+  <button class="btn-send-file" id="send-file-btn" onclick="FileShare.sendFile()" disabled>
+    Select a file first
+  </button>
+</div>
+
+<!-- ── Transfer progress ── -->
+<div class="card hidden" id="progress-card">
+  <div class="section-label">Transfer</div>
+  <div class="transfer-box">
+    <div class="transfer-name" id="transfer-filename">—</div>
+    <div class="progress-track">
+      <div class="progress-fill" id="progress-fill"></div>
+    </div>
+    <div class="transfer-meta">
+      <span id="transfer-pct">0%</span>
+      <span id="transfer-speed">—</span>
+    </div>
+    <div class="transfer-status" id="transfer-status"></div>
+  </div>
+</div>
+
+<!-- ── Transfer history ── -->
+<div class="card hidden" id="history-card">
+  <div class="section-label">Transfer history</div>
+  <div id="history-list"></div>
+</div>

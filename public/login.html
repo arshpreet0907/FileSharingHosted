@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Peer Connect — Login</title>
+  <link rel="stylesheet" href="/assets/css/main.css"/>
+</head>
+<body>
+<div class="container auth-container">
+
+  <div class="logo">Peer Connect</div>
+  <h1>Welcome <span>Back</span></h1>
+  <p class="subtitle">Log in to connect, chat, and transfer files securely.</p>
+
+  <div class="card">
+    <div class="section-label">Sign in</div>
+
+    <div class="auth-form">
+      <input class="text-input" id="login-email" type="email" placeholder="Email" autocomplete="email"/>
+      <input class="text-input" id="login-password" type="password" placeholder="Password" autocomplete="current-password"/>
+      <button class="btn-primary" id="login-btn" onclick="handleLogin()">Log in</button>
+    </div>
+
+    <div id="login-alert" class="hidden"></div>
+
+    <p class="auth-footer">
+      Don't have an account? <a href="/register.html">Register</a>
+    </p>
+  </div>
+
+</div>
+
+<script>
+async function handleLogin() {
+  const email    = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value.trim();
+  const btn      = document.getElementById('login-btn');
+  const alertEl  = document.getElementById('login-alert');
+
+  if (!email || !password) {
+    showAlert(alertEl, 'error', 'Please enter email and password');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Logging in…';
+
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    const data = await res.json();
+
+    if (data.ok) {
+      window.location.href = '/';
+    } else {
+      showAlert(alertEl, 'error', data.error || 'Login failed');
+    }
+  } catch (err) {
+    showAlert(alertEl, 'error', 'Network error — is the server running?');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Log in';
+  }
+}
+
+function showAlert(el, type, msg) {
+  el.className = `alert alert-${type}`;
+  el.textContent = msg;
+  el.classList.remove('hidden');
+}
+
+// Enter key support
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('login-password').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') handleLogin();
+  });
+});
+</script>
+</body>
+</html>

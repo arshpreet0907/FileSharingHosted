@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Peer Connect — Register</title>
+  <link rel="stylesheet" href="/assets/css/main.css"/>
+</head>
+<body>
+<div class="container auth-container">
+
+  <div class="logo">Peer Connect</div>
+  <h1>Create <span>Account</span></h1>
+  <p class="subtitle">Register to start connecting with peers securely.</p>
+
+  <!-- Step 1: Email + Password -->
+  <div class="card" id="step1-card">
+    <div class="section-label">Step 1 of 2 — Your details</div>
+
+    <div class="auth-form">
+      <input class="text-input" id="reg-email" type="email" placeholder="Email" autocomplete="email"/>
+      <input class="text-input" id="reg-password" type="password" placeholder="Password (min 6 chars)" autocomplete="new-password"/>
+      <input class="text-input" id="reg-confirm" type="password" placeholder="Confirm password" autocomplete="new-password"/>
+      <button class="btn-primary" id="reg-step1-btn" onclick="handleStep1()">Send verification code</button>
+    </div>
+
+    <div id="reg-alert" class="hidden"></div>
+
+    <p class="auth-footer">
+      Already have an account? <a href="/login.html">Log in</a>
+    </p>
+  </div>
+
+  <!-- Step 2: OTP (hidden initially) -->
+  <div class="card hidden" id="step2-card">
+    <div class="section-label">Step 2 of 2 — Verify your email</div>
+    <p style="font-size:12px;color:#888;margin-bottom:1rem">Enter the 6-digit code sent to <span id="otp-email-display" style="color:#1D9E75;font-family:'JetBrains Mono',monospace"></span></p>
+
+    <div class="auth-form">
+      <div class="otp-row">
+        <input class="otp-input" id="otp-0" type="text" maxlength="1" inputmode="numeric" autocomplete="one-time-code" oninput="otpNext(this, 0)"/>
+        <input class="otp-input" id="otp-1" type="text" maxlength="1" inputmode="numeric" oninput="otpNext(this, 1)"/>
+        <input class="otp-input" id="otp-2" type="text" maxlength="1" inputmode="numeric" oninput="otpNext(this, 2)"/>
+        <input class="otp-input" id="otp-3" type="text" maxlength="1" inputmode="numeric" oninput="otpNext(this, 3)"/>
+        <input class="otp-input" id="otp-4" type="text" maxlength="1" inputmode="numeric" oninput="otpNext(this, 4)"/>
+        <input class="otp-input" id="otp-5" type="text" maxlength="1" inputmode="numeric" oninput="otpNext(this, 5)"/>
+      </div>
+      <button class="btn-primary" id="reg-step2-btn" onclick="handleStep2()">Verify & register</button>
+    </div>
+
+    <div id="otp-alert" class="hidden"></div>
+
+    <p class="auth-footer" style="margin-top:0.75rem">
+      <a href="#" onclick="resendOtp()" id="resend-link">Resend code</a>
+    </p>
+  </div>
+
+  <!-- Success message (hidden initially) -->
+  <div class="card hidden" id="success-card">
+    <div class="section-label" style="color:#5DCAA5">✓ Registration submitted</div>
+    <p style="font-size:13px;color:#888;margin-top:0.5rem">Your account is pending admin approval. You'll receive an email once approved.</p>
+    <p style="font-size:13px;color:#888;margin-top:0.25rem"><a href="/login.html">Go to login</a></p>
+  </div>
+
+</div>
+
+<script>
+let pendingEmail = '';
+let pendingPassword = '';
+
+// ── Step 1: Send OTP ────────────────────────────────────────────────
+async function handleStep1() {
+  const email    = document.getElementById('reg-email').value.trim();
+  const password = document.getElementById('reg-password').value;
+  const confirm  = document.getElementById('reg-confirm').value;
+  const btn      = document.getElementById('reg-step1-btn');
+  const alertEl  = document.getElementById('reg-alert');
+
+  if (!email || !password || !confirm) {
+    showAlert(alertEl, 'error', 'Please fill in all fields');
+    return;
+  }
+  if (password.length < 6) {
+    showAlert(alertEl, 'error', 'Password must be at least 6 characters');
+    return;
+  }
+  if (password !== confirm) {
+    showAlert(alertEl, 'error', 'Passwords do not match');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
+
+  try {
+    const res = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    const data = await res.json();
+
+    if (data.ok) {
+      pendingEmail = email;
+      pendingPassword = password;
+      document.getElementById('step1-card').classList.add('hidden');
+      document.getElementById('otp-email-display').textContent = email;
+      document.getElementById('step2-card').classList.remove('hidden');
+      document.getElementById('otp-0').focus();
+    } else {
+      showAlert(alertEl, 'error', data.error || 'Registration failed');
+    }
+  } catch (err) {
+    showAlert(alertEl, 'error', 'Network error — is the server running?');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Send verification code';
+  }
+}
+
+// ── Step 2: Verify OTP ──────────────────────────────────────────────
+async function handleStep2() {
+  const code = getOtpCode();
+  const btn  = document.getElementById('reg-step2-btn');
+  const alertEl = document.getElementById('otp-alert');
+
+  if (code.length !== 6) {
+    showAlert(alertEl, 'error', 'Please enter the 6-digit code');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Verifying…';
+
+  try {
+    const res = await fetch('/api/auth/verify-otp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: pendingEmail, code, password: pendingPassword })
+    });
+    const data = await res.json();
+
+    if (data.ok) {
+      document.getElementById('step2-card').classList.add('hidden');
+      document.getElementById('success-card').classList.remove('hidden');
+    } else {
+      showAlert(alertEl, 'error', data.error || 'Verification failed');
+      // Clear OTP inputs for retry
+      for (let i = 0; i < 6; i++) document.getElementById(`otp-${i}`).value = '';
+      document.getElementById('otp-0').focus();
+    }
+  } catch (err) {
+    showAlert(alertEl, 'error', 'Network error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Verify & register';
+  }
+}
+
+// ── Resend OTP ──────────────────────────────────────────────────────
+async function resendOtp() {
+  if (!pendingEmail) return;
+  const link = document.getElementById('resend-link');
+  link.textContent = 'Sending…';
+  try {
+    await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: pendingEmail, password: pendingPassword })
+    });
+    link.textContent = 'Code resent ✓';
+    setTimeout(() => { link.textContent = 'Resend code'; }, 3000);
+  } catch {
+    link.textContent = 'Failed — try again';
+    setTimeout(() => { link.textContent = 'Resend code'; }, 3000);
+  }
+}
+
+// ── OTP input helpers ──────────────────────────────────────────────
+function otpNext(input, index) {
+  if (input.value.length === 1 && index < 5) {
+    document.getElementById(`otp-${index + 1}`).focus();
+  }
+  if (index === 5 && input.value.length === 1) {
+    handleStep2();
+  }
+}
+
+function getOtpCode() {
+  let code = '';
+  for (let i = 0; i < 6; i++) code += document.getElementById(`otp-${i}`).value;
+  return code;
+}
+
+function showAlert(el, type, msg) {
+  el.className = `alert alert-${type}`;
+  el.textContent = msg;
+  el.classList.remove('hidden');
+}
+
+// Enter key on confirm password triggers step 1
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('reg-confirm').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') handleStep1();
+  });
+});
+</script>
+</body>
+</html>

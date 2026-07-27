@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Peer Connect — Admin</title>
+  <link rel="stylesheet" href="/assets/css/main.css"/>
+  <style>
+    .admin-layout { display: flex; flex-direction: column; gap: 0.75rem; }
+    .stats-row { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+    .stat-card { background: #111; border-radius: 8px; padding: 0.75rem 1rem; flex: 1; min-width: 80px; text-align: center; }
+    .stat-num { font-family: 'JetBrains Mono', monospace; font-size: 24px; font-weight: 700; color: #1D9E75; }
+    .stat-label { font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #444; margin-top: 2px; }
+
+    .admin-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    .admin-table th { text-align: left; font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #444; padding: 0.4rem 0.5rem; border-bottom: 0.5px solid #222; }
+    .admin-table td { padding: 0.5rem; border-bottom: 0.5px solid #1a1a1a; font-family: 'JetBrains Mono', monospace; color: #888; }
+    .admin-table tr:hover td { background: #111; }
+
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 10px; font-weight: 700; }
+    .badge-pending { background: #2a1e00; color: #EF9F27; }
+    .badge-approved { background: #0d2e22; color: #5DCAA5; }
+    .badge-declined { background: #2e0d0d; color: #f09595; }
+
+    .btn-sm { padding: 4px 12px; border-radius: 6px; font-family: 'Syne', sans-serif; font-size: 10px; font-weight: 700; cursor: pointer; border: none; }
+    .btn-approve { background: #1D9E75; color: #e0f5ee; }
+    .btn-approve:hover { background: #178a64; }
+    .btn-approve:disabled { background: #222; color: #444; cursor: not-allowed; }
+    .btn-decline-sm { background: none; border: 0.5px solid #3a1a1a; color: #f09595; }
+    .btn-decline-sm:hover { background: #2e0d0d; }
+
+    .section-header { display: flex; justify-content: space-between; align-items: center; }
+    .refresh-indicator { font-size: 10px; color: #444; }
+    .empty-state { font-size: 12px; color: #444; text-align: center; padding: 1rem; }
+    .online { color: #5DCAA5; }
+    .offline { color: #444; }
+    .admin-nav { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; }
+  </style>
+</head>
+<body>
+<div class="container admin-container">
+
+  <!-- Admin nav -->
+  <div class="admin-nav">
+    <div class="logo">Peer Connect — Admin</div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <span class="refresh-indicator" id="refresh-indicator">auto-refreshing…</span>
+      <button class="btn-secondary" onclick="fetchAll()" style="padding:4px 10px;font-size:10px">⟳ Refresh</button>
+      <a href="/app.html" class="btn-secondary" style="text-decoration:none;padding:4px 10px;font-size:10px">← App</a>
+      <button class="btn-disconnect" onclick="handleLogout()" style="padding:4px 10px;font-size:10px">Logout</button>
+    </div>
+  </div>
+
+  <div class="admin-layout">
+
+    <!-- Stats -->
+    <div class="card">
+      <div class="section-label">Overview</div>
+      <div class="stats-row" id="stats-row">
+        <div class="stat-card"><div class="stat-num" id="stat-online">—</div><div class="stat-label">Online</div></div>
+        <div class="stat-card"><div class="stat-num" id="stat-rooms">—</div><div class="stat-label">Active Rooms</div></div>
+        <div class="stat-card"><div class="stat-num" id="stat-suspended">—</div><div class="stat-label">Suspended</div></div>
+        <div class="stat-card"><div class="stat-num" id="stat-pending-users">—</div><div class="stat-label">Pending</div></div>
+      </div>
+    </div>
+
+    <!-- Pending registrations -->
+    <div class="card">
+      <div class="section-header">
+        <div class="section-label">Pending Registrations</div>
+      </div>
+      <div id="pending-section">
+        <div class="empty-state">Loading…</div>
+      </div>
+    </div>
+
+    <!-- Active connections -->
+    <div class="card">
+      <div class="section-header">
+        <div class="section-label">Active Connections</div>
+      </div>
+      <div id="connections-section">
+        <div class="empty-state">Loading…</div>
+      </div>
+    </div>
+
+    <!-- All users -->
+    <div class="card">
+      <div class="section-header">
+        <div class="section-label">All Users</div>
+      </div>
+      <div id="users-section">
+        <div class="empty-state">Loading…</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+let pollTimer = null;
+
+// ── Fetch all data ──────────────────────────────────────────────────
+async function fetchAll() {
+  const indicator = document.getElementById('refresh-indicator');
+  indicator.textContent = 'refreshing…';
+
+  try {
+    const [statsRes, pendingRes, connRes, usersRes] = await Promise.all([
+      fetch('/admin/stats').then(r => r.ok ? r.json() : null),
+      fetch('/admin/pending-users').then(r => r.ok ? r.json() : null),
+      fetch('/admin/active-connections').then(r => r.ok ? r.json() : null),
+      fetch('/admin/all-users').then(r => r.ok ? r.json() : null)
+    ]);
+
+    if (statsRes) {
+      document.getElementById('stat-online').textContent = statsRes.onlinePeers;
+      document.getElementById('stat-rooms').textContent = statsRes.activeRooms;
+      document.getElementById('stat-suspended').textContent = statsRes.suspendedRooms;
+    }
+
+    if (pendingRes) {
+      renderPending(pendingRes.users);
+      document.getElementById('stat-pending-users').textContent = pendingRes.users?.length || 0;
+    }
+
+    if (connRes) {
+      renderConnections(connRes);
+    }
+
+    if (usersRes) {
+      renderUsers(usersRes.users);
+    }
+
+    indicator.textContent = 'auto-refreshing…';
+  } catch (err) {
+    indicator.textContent = 'fetch error — redirecting to login';
+    // If we get a 401, redirect to login
+    window.location.href = '/login.html';
+  }
+}
+
+// ── Render pending ─────────────────────────────────────────────────
+function renderPending(users) {
+  const section = document.getElementById('pending-section');
+  if (!users || users.length === 0) {
+    section.innerHTML = '<div class="empty-state">No pending registrations</div>';
+    return;
+  }
+
+  let html = `<table class="admin-table">
+    <tr><th>Email</th><th>Registered</th><th>Action</th></tr>`;
+  users.forEach(u => {
+    const date = new Date(u.created_at + 'Z').toLocaleString();
+    html += `<tr>
+      <td>${escHtml(u.email)}</td>
+      <td>${date}</td>
+      <td>
+        <button class="btn-sm btn-approve" onclick="approveUser('${escHtml(u.email)}')">Approve</button>
+        <button class="btn-sm btn-decline-sm" onclick="declineUser('${escHtml(u.email)}')">Decline</button>
+      </td>
+    </tr>`;
+  });
+  html += '</table>';
+  section.innerHTML = html;
+}
+
+// ── Render connections ─────────────────────────────────────────────
+function renderConnections(data) {
+  const section = document.getElementById('connections-section');
+  if (!data.connections || data.connections.length === 0) {
+    section.innerHTML = '<div class="empty-state">No active connections</div>';
+    return;
+  }
+
+  let html = `<table class="admin-table">
+    <tr><th>Peer A</th><th>Peer B</th><th>State</th><th>Online</th><th>Buffered</th></tr>`;
+  data.connections.forEach(c => {
+    const statusA = c.peerAOnline ? '<span class="online">● online</span>' : '<span class="offline">● offline</span>';
+    const statusB = c.peerBOnline ? '<span class="online">● online</span>' : '<span class="offline">● offline</span>';
+    html += `<tr>
+      <td>${escHtml(c.peerA)}</td>
+      <td>${escHtml(c.peerB)}</td>
+      <td><span class="badge ${c.state === 'ACTIVE' ? 'badge-approved' : 'badge-pending'}">${c.state}</span></td>
+      <td>${statusA} / ${statusB}</td>
+      <td>${c.buffered}</td>
+    </tr>`;
+  });
+  html += '</table>';
+  section.innerHTML = html;
+}
+
+// ── Render all users ──────────────────────────────────────────────
+function renderUsers(users) {
+  const section = document.getElementById('users-section');
+  if (!users || users.length === 0) {
+    section.innerHTML = '<div class="empty-state">No users</div>';
+    return;
+  }
+
+  let html = `<table class="admin-table">
+    <tr><th>Email</th><th>Status</th><th>Registered</th></tr>`;
+  users.forEach(u => {
+    const date = new Date(u.created_at + 'Z').toLocaleString();
+    const badgeClass = `badge badge-${u.status}`;
+    html += `<tr>
+      <td>${escHtml(u.email)}</td>
+      <td><span class="${badgeClass}">${u.status}</span></td>
+      <td>${date}</td>
+    </tr>`;
+  });
+  html += '</table>';
+  section.innerHTML = html;
+}
+
+// ── Approve user ────────────────────────────────────────────────────
+async function approveUser(email) {
+  const res = await fetch('/admin/approve-user', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email })
+  });
+  const data = await res.json();
+  if (data.ok) {
+    fetchAll();
+  } else {
+    alert('Error: ' + (data.error || 'Unknown'));
+  }
+}
+
+// ── Decline user ────────────────────────────────────────────────────
+async function declineUser(email) {
+  if (!confirm(`Decline ${email}?`)) return;
+  const res = await fetch('/admin/decline-user', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email })
+  });
+  const data = await res.json();
+  if (data.ok) {
+    fetchAll();
+  } else {
+    alert('Error: ' + (data.error || 'Unknown'));
+  }
+}
+
+// ── Logout ──────────────────────────────────────────────────────────
+async function handleLogout() {
+  await fetch('/api/auth/logout', { method: 'POST' });
+  window.location.href = '/login.html';
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────
+function escHtml(str) {
+  return str.replace(/&/g,'&').replace(/</g,'<').replace(/>/g,'>').replace(/"/g,'"');
+}
+
+// ── Poll every 5 seconds ────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  fetchAll();
+  pollTimer = setInterval(fetchAll, 5000);
+});
+</script>
+</body>
+</html>
