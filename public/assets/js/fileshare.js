@@ -15,6 +15,7 @@ const FileShare = (() => {
   let pc          = null;
   let dataChannel = null;
   let isInitiator = false;
+  let rtcSetupStarted = false;
 
   const RTC_CONFIG = {
     iceServers: [
@@ -40,11 +41,17 @@ const FileShare = (() => {
 
   // ── Ensure RTC connection ─────────────────────────────────────────
   function ensureRtcConnection(initiator = true) {
-    if (pc && (pc.connectionState === 'connected' || pc.connectionState === 'connecting')) return;
-    isInitiator = initiator;
-    createPeerConnection(initiator);
+    // Only the initiator proactively creates the connection and sends the offer.
+    // The responder does nothing here — it waits for the incoming offer
+    // (handled in handleSignal) to create its own side. This removes a race
+    // where both sides tried to set up a connection independently, which could
+    // silently destroy an in-progress handshake on slower networks.
+    if (!initiator) return;
+    if (rtcSetupStarted && pc && pc.connectionState !== 'closed' && pc.connectionState !== 'failed') return;
+    rtcSetupStarted = true;
+    isInitiator = true;
+    createPeerConnection(true);
   }
-
   function isDataChannelOpen() {
     return dataChannel?.readyState === 'open';
   }
@@ -75,6 +82,7 @@ const FileShare = (() => {
         case 'failed':
           setRtcStatus('failed', 'P2P connection failed — reconnect peer to retry');
           document.getElementById('send-card')?.classList.add('locked');
+          rtcSetupStarted = false;
           break;
         case 'closed':
           setRtcStatus('', 'P2P connection closed');
@@ -104,7 +112,11 @@ const FileShare = (() => {
   async function handleSignal({ type, data, fromId }) {
     console.log(`[SIGNAL] ${type} from ${fromId}`);
     if (type === 'offer') {
-      if (!pc || pc.signalingState === 'closed') await createPeerConnection(false);
+    if (!pc || pc.signalingState === 'closed' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+        rtcSetupStarted = true;
+        isInitiator = false;
+        await createPeerConnection(false);
+      }
       await pc.setRemoteDescription(new RTCSessionDescription(data));
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
@@ -328,6 +340,7 @@ const FileShare = (() => {
     pc?.close();
     dataChannel = null;
     pc          = null;
+    rtcSetupStarted = false;
     setRtcStatus('', 'No P2P connection');
     document.getElementById('send-card')?.classList.add('locked');
   }
