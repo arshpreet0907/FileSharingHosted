@@ -262,7 +262,15 @@ io.on('connection', (socket) => {
     };
     rooms.set(roomId, room);
 
-    socket.emit('connect-result', { ok: true, peerId: targetId });
+    // NOTE: we deliberately do NOT emit 'connect-result' back to this socket
+    // (the accepter). The accepter already set connectedPeerId/rtcInitiator=false
+    // locally the moment they clicked Accept (see 'connection-request' handler
+    // in app.js). Emitting it here too used to overwrite rtcInitiator back to
+    // true on the accepter's client, making BOTH peers believe they were the
+    // initiator — causing both sides to send a WebRTC offer simultaneously
+    // (glare), which is what produced the "Called in wrong state: stable" error.
+    // Only the original requester — who is genuinely waiting on the result —
+    // needs this event.
     io.to(targetSocket).emit('connect-result', { ok: true, peerId: myEmail });
     console.log(`[ROOM] Created: ${roomId}`);
   });
