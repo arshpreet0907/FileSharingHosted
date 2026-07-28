@@ -47,6 +47,8 @@ const FileShare = (() => {
   let sendTotal     = 0;
   let sendStartTime = 0;
   let sendParams    = null;
+  let offerTimeout  = null;
+  const OFFER_TIMEOUT_MS = 20000;
 
   // ── Receive state ─────────────────────────────────────────────────
   let recvMeta     = null;
@@ -71,6 +73,25 @@ const FileShare = (() => {
     return dataChannel?.readyState === 'open';
   }
 
+  async function logSelectedCandidatePair() {
+    try {
+      const stats = await pc.getStats();
+      let pairInfo = null;
+      stats.forEach(r => {
+        if (r.type === 'candidate-pair' && r.state === 'succeeded' && r.nominated) pairInfo = r;
+      });
+      if (!pairInfo) return;
+      const local  = stats.get(pairInfo.localCandidateId);
+      const remote = stats.get(pairInfo.remoteCandidateId);
+      console.log(`[ICE] active pair — local: ${local?.candidateType}, remote: ${remote?.candidateType}`);
+      if (local?.candidateType === 'relay' || remote?.candidateType === 'relay') {
+        console.log('[ICE] Connection is going through a TURN relay. If transfers stall, the relay server is the likely culprit.');
+      }
+    } catch (e) {
+      console.warn('[ICE] Could not read candidate stats:', e);
+    }
+  }
+
   // ── Create RTCPeerConnection ──────────────────────────────────────
   async function createPeerConnection(initiator) {
     if (pc) { pc.close(); pc = null; }
@@ -79,6 +100,10 @@ const FileShare = (() => {
     pc.onicecandidate = ({ candidate }) => {
       const targetId = App.getConnectedPeerId();
       if (!targetId) return;
+      if (candidate) {
+        const m = /typ (\w+)/.exec(candidate.candidate || '');
+        console.log(`[ICE] local candidate type: ${m ? m[1] : 'unknown'}`);
+      }
       App.getSocket().emit('signal', { type: 'ice', data: candidate });
     };
 
@@ -89,6 +114,7 @@ const FileShare = (() => {
         case 'connected':
           setRtcStatus('connected', `P2P connected to ${App.getConnectedPeerId()?.slice(0,14)}…`);
           document.getElementById('send-card')?.classList.remove('locked');
+          logSelectedCandidatePair();
           break;
         case 'disconnected':
           setRtcStatus('connecting', 'P2P connection lost — waiting…');
@@ -153,9 +179,15 @@ const FileShare = (() => {
       document.getElementById('send-card')?.classList.remove('locked');
     };
     ch.onclose   = () => console.log('[DC] closed');
+    ch.onerror   = (e) => console.error('[DC] error:', e.error || e);
     ch.onmessage = ({ data }) => {
-      if (typeof data === 'string') handleControl(JSON.parse(data));
-      else handleChunk(data);
+      if (typeof data === 'string') {
+        const msg = JSON.parse(data);
+        console.log(`[FILE] received control message: ${msg.type}`);
+        handleControl(msg);
+      } else {
+        handleChunk(data);
+      }
     };
   }
 
@@ -173,7 +205,9 @@ const FileShare = (() => {
         startSending();
         break;
       case 'file-declined':
+        clearTimeout(offerTimeout);
         setTransferStatus('paused', '✕ Declined by peer');
+        document.getElementById('send-file-btn').disabled = false;
         break;
       case 'ack':
         sendAcked = msg.seq;
@@ -250,10 +284,23 @@ const FileShare = (() => {
       totalChunks: sendTotal,
       ackEvery: sendParams.ackEvery
     }));
+    console.log(`[FILE] sent file-offer for "${sendFileObj.name}", dataChannel.readyState=${dataChannel.readyState}, bufferedAmount=${dataChannel.bufferedAmount}`);
     setTransferStatus('sending', 'Waiting for peer to accept…');
+
+    clearTimeout(offerTimeout);
+    offerTimeout = setTimeout(() => {
+      // No file-accepted / file-declined came back in time. Rather than sit on
+      // "Waiting for peer to accept…" forever, surface it as a failure so the
+      // user knows something is wrong (usually a stalled/relay-only DataChannel)
+      // and can retry.
+      console.warn('[FILE] no response to file-offer within timeout — DataChannel likely not actually delivering messages');
+      setTransferStatus('paused', '✕ No response from peer — connection may be stalled. Try reconnecting and resend.');
+      document.getElementById('send-file-btn').disabled = false;
+    }, OFFER_TIMEOUT_MS);
   }
 
   function startSending() {
+    clearTimeout(offerTimeout);
     setTransferStatus('sending', 'Sending…');
     sendAcked = -1;
     pumpChunks();
