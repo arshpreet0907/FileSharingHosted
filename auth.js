@@ -1,36 +1,78 @@
 // ── auth.js — Authentication routes ────────────────────────────────────
 const express    = require('express');
 const bcrypt     = require('bcrypt');
+const nodemailer = require('nodemailer');
 const router     = express.Router();
 const db         = require('./db');
-const { Resend } = require('resend');
 
+// ── Email configuration ───────────────────────────────────────────────
+// Priority: Nodemailer (SMTP) > Resend (toggleable)
+// Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS to use Nodemailer.
+// If those are unset, set RESEND_API_KEY to use Resend instead.
+const SMTP_HOST = process.env.SMTP_HOST || null;
+const SMTP_PORT = parseInt(process.env.SMTP_PORT || '587', 10);
+const SMTP_USER = process.env.SMTP_USER || null;
+const SMTP_PASS = process.env.SMTP_PASS || null;
 const RESEND_API_KEY = process.env.RESEND_API_KEY || null;
-const EMAIL_FROM = process.env.EMAIL_FROM || 'Peer Connect <onboarding@resend.dev>';
-let resend = null;
-if (RESEND_API_KEY) {
-  resend = new Resend(RESEND_API_KEY);
+const EMAIL_FROM = process.env.EMAIL_FROM || 'Peer Connect <noreply@peerconnect.app>';
+
+let transporter = null;
+let resendClient = null;
+let emailBackend = null; // 'smtp', 'resend', or null
+
+if (SMTP_HOST && SMTP_USER && SMTP_PASS) {
+  transporter = nodemailer.createTransport({
+    host: SMTP_HOST,
+    port: SMTP_PORT,
+    secure: SMTP_PORT === 465,
+    auth: { user: SMTP_USER, pass: SMTP_PASS }
+  });
+  emailBackend = 'smtp';
+  console.log(`[EMAIL] Using Nodemailer (SMTP): ${SMTP_HOST}:${SMTP_PORT}`);
+} else if (RESEND_API_KEY) {
+  const { Resend } = require('resend');
+  resendClient = new Resend(RESEND_API_KEY);
+  emailBackend = 'resend';
+  console.log('[EMAIL] Using Resend');
+} else {
+  console.warn('[EMAIL] No email backend configured — set SMTP_* vars or RESEND_API_KEY');
 }
 
-// ── Helper: send email (Resend or error when not configured) ──────────
+// ── Helper: send email ────────────────────────────────────────────────
 async function sendEmail(to, subject, html) {
-  if (resend) {
+  if (emailBackend === 'smtp' && transporter) {
     try {
-      const result = await resend.emails.send({
+      const info = await transporter.sendMail({
         from: EMAIL_FROM,
         to,
         subject,
         html
       });
-      console.log(`[EMAIL] Sent to ${to} — id=${result?.id || 'unknown'}`);
+      console.log(`[EMAIL] Sent to ${to} via SMTP — id=${info.messageId || 'unknown'}`);
+      return true;
+    } catch (err) {
+      console.error('[EMAIL] SMTP failed:', err.message);
+      return false;
+    }
+  }
+
+  if (emailBackend === 'resend' && resendClient) {
+    try {
+      const { id: emailId } = await resendClient.emails.send({
+        from: EMAIL_FROM,
+        to,
+        subject,
+        html
+      });
+      console.log(`[EMAIL] Sent to ${to} via Resend — id=${emailId || 'unknown'}`);
       return true;
     } catch (err) {
       console.error('[EMAIL] Resend failed:', err.message);
       return false;
     }
   }
-  // Resend not configured — this is an error, not a silent success
-  console.error(`[EMAIL] FAILED: RESEND_API_KEY not set. Cannot send email to ${to}. Set RESEND_API_KEY in environment variables.`);
+
+  console.error(`[EMAIL] FAILED: No email backend configured (to=${to}). Set SMTP_* vars or RESEND_API_KEY.`);
   return false;
 }
 
@@ -188,4 +230,4 @@ router.get('/me', requireAuth, (req, res) => {
   });
 });
 
-module.exports = { router, requireAuth, requireAdmin };
+module.exports = { router, requireAuth, requireAdmin, sendEmail };

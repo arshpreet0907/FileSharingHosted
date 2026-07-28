@@ -6,7 +6,7 @@ const path    = require('path');
 const cookieParser = require('cookie-parser');
 
 const db       = require('./db');
-const { router: authRoutes, requireAuth, requireAdmin } = require('./auth');
+const { router: authRoutes, requireAuth, requireAdmin, sendEmail } = require('./auth');
 
 const app    = express();
 const server = http.createServer(app);
@@ -104,22 +104,13 @@ app.post('/admin/approve-user', requireAuth, requireAdmin, async (req, res) => {
     db.setUserStatus(email, 'approved');
 
     // Notify user via email
-    try {
-      const { Resend } = require('resend');
-      const resendKey = process.env.RESEND_API_KEY;
-      if (resendKey) {
-        const resendClient = new Resend(resendKey);
-        await resendClient.emails.send({
-          from: 'Peer Connect <noreply@peerconnect.app>',
-          to: email,
-          subject: 'Your Peer Connect registration is approved!',
-          html: `<p>Your account has been approved by the admin.</p><p>You can now <a href="${req.protocol}://${req.get('host')}/login.html">log in</a> and start using Peer Connect.</p>`
-        });
-      } else {
-        console.log(`[EMAIL LOG] To: ${email} — Subject: Registration approved`);
-      }
-    } catch (emailErr) {
-      console.error('[ADMIN] Approval email failed:', emailErr.message);
+    const sentApproval = await sendEmail(
+      email,
+      'Your Peer Connect registration is approved!',
+      `<p>Your account has been approved by the admin.</p><p>You can now <a href="${req.protocol}://${req.get('host')}/login.html">log in</a> and start using Peer Connect.</p>`
+    );
+    if (!sentApproval) {
+      console.warn(`[ADMIN] Approval email to ${email} failed — but user was approved`);
     }
 
     console.log(`[ADMIN] Approved: ${email}`);
