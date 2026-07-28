@@ -25,7 +25,11 @@ if (SMTP_HOST && SMTP_USER && SMTP_PASS) {
     host: SMTP_HOST,
     port: SMTP_PORT,
     secure: SMTP_PORT === 465,
-    auth: { user: SMTP_USER, pass: SMTP_PASS }
+    auth: { user: SMTP_USER, pass: SMTP_PASS },
+    connectionTimeout: 10000,   // fail fast if Gmail blocks the cloud IP (10s)
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
+    tls: { rejectUnauthorized: false }  // needed from some cloud environments
   });
   emailBackend = 'smtp';
   console.log(`[EMAIL] Using Nodemailer (SMTP): ${SMTP_HOST}:${SMTP_PORT}`);
@@ -38,8 +42,9 @@ if (SMTP_HOST && SMTP_USER && SMTP_PASS) {
   console.warn('[EMAIL] No email backend configured — set SMTP_* vars or RESEND_API_KEY');
 }
 
-// ── Helper: send email ────────────────────────────────────────────────
+// ── Helper: send email (SMTP primary, Resend fallback) ────────────────
 async function sendEmail(to, subject, html) {
+  // Try SMTP first
   if (emailBackend === 'smtp' && transporter) {
     try {
       const info = await transporter.sendMail({
@@ -52,11 +57,18 @@ async function sendEmail(to, subject, html) {
       return true;
     } catch (err) {
       console.error('[EMAIL] SMTP failed:', err.message);
+      // If Resend is available, fall back automatically
+      if (resendClient) {
+        console.log('[EMAIL] Falling back to Resend…');
+        emailBackend = 'resend';
+        return sendEmail(to, subject, html);
+      }
       return false;
     }
   }
 
-  if (emailBackend === 'resend' && resendClient) {
+  // Try Resend (primary if no SMTP, or fallback from SMTP)
+  if (resendClient) {
     try {
       const { id: emailId } = await resendClient.emails.send({
         from: EMAIL_FROM,
@@ -100,6 +112,9 @@ function requireAdmin(req, res, next) {
 }
 
 // ── POST /api/auth/register ────────────────────────────────────────────
+// Single-step: email + password → create pending user (no email/OTP required)
+// OTP / email verification is reserved for future use once a verified
+// sending domain is configured (see sendEmail below).
 router.post('/register', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -117,61 +132,13 @@ router.post('/register', async (req, res) => {
       if (existing.status === 'declined') return res.status(400).json({ error: 'Your registration was declined. Contact admin.' });
     }
 
-    // Generate OTP
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-    db.createOtp(email, code, expiresAt);
-
-    // Send OTP email
-    const sent = await sendEmail(
-      email,
-      'Your Peer Connect verification code',
-      `<p>Your verification code is:</p><h2 style="letter-spacing:4px;font-size:28px;background:#1a1a1a;color:#1D9E75;padding:12px 20px;border-radius:8px;display:inline-block">${code}</h2><p>This code expires in 5 minutes.</p><p>If you did not request this, ignore this email.</p>`
-    );
-
-    if (!sent) return res.status(500).json({ error: 'Failed to send verification email. Check server email config.' });
-
-    res.json({ ok: true, message: 'Verification code sent to your email' });
-  } catch (err) {
-    console.error('[AUTH] Register error:', err);
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-// ── POST /api/auth/verify-otp ─────────────────────────────────────────
-router.post('/verify-otp', async (req, res) => {
-  try {
-    const { email, code, password } = req.body;
-    if (!email || !code || !password) return res.status(400).json({ error: 'Email, code, and password required' });
-
-    // Verify OTP
-    const valid = db.verifyOtp(email, code);
-    if (!valid) return res.status(400).json({ error: 'Invalid or expired verification code' });
-
-    // Hash password and create user
+    // Hash password and create user directly (no OTP step)
     const hash = bcrypt.hashSync(password, 10);
     db.createUser(email, hash);
 
-    // ── Notify admin about the new registration ─────────────────────────
-    const adminEmail = process.env.ADMIN_EMAIL;
-    if (adminEmail) {
-      const host = req.get('host') || 'localhost';
-      const protocol = req.protocol || 'http';
-      await sendEmail(
-        adminEmail,
-        `New registration request: ${email}`,
-        `<p>A new user has registered and is awaiting approval:</p>
-         <table style="border-collapse:collapse;margin:16px 0;">
-           <tr><td style="padding:6px 12px;font-weight:bold;border:1px solid #ccc;">Email</td><td style="padding:6px 12px;border:1px solid #ccc;">${email}</td></tr>
-           <tr><td style="padding:6px 12px;font-weight:bold;border:1px solid #ccc;">Time</td><td style="padding:6px 12px;border:1px solid #ccc;">${new Date().toLocaleString()}</td></tr>
-         </table>
-         <p><a href="${protocol}://${host}/admin.html" style="display:inline-block;padding:10px 20px;background:#1D9E75;color:#fff;text-decoration:none;border-radius:6px;">Review in admin panel →</a></p>`
-      );
-    }
-
     res.json({ ok: true, message: 'Registration submitted — awaiting admin approval' });
   } catch (err) {
-    console.error('[AUTH] Verify OTP error:', err);
+    console.error('[AUTH] Register error:', err);
     res.status(500).json({ error: 'Server error' });
   }
 });
